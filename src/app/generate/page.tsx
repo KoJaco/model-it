@@ -23,6 +23,7 @@ export default function Home() {
         prompt: inputValue,
       }),
     });
+
     const data = await response.json();
     console.log(data);
     setImage(data?.[0]);
