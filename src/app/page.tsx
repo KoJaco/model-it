@@ -52,3 +52,15 @@ async function CrudShowcase() {
     </div>
   );
 }
+
+async function generateImage() {
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt: "" }),
+  });
+}
