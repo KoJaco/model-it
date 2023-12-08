@@ -1,49 +1,66 @@
-import type { NextResponse } from "next/server";
-import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-type Data = string;
-interface ExtendedNextApiRequest extends NextApiRequest {
-  body: {
-    prompt: string;
-  };
-}
-export default async function POST(
-  req: ExtendedNextApiRequest,
-  res: NextApiResponse<Data>,
-) {
-  // TODO: Check if user is logged in
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+import Replicate from "replicate";
+import { env } from "~/env";
 
-  if (req.body?.prompt === null) {
-    throw new Error("No prompt was provided");
+const redis = new Redis({
+  url: env.UPSTASH_REDIS_REST_URL,
+  token: env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+const ratelimit = new Ratelimit({
+  redis: redis,
+  limiter: Ratelimit.fixedWindow(25, "1440 m"),
+});
+
+const replicate = new Replicate({
+  auth: env.REPLICATE_API_TOKEN,
+});
+
+export async function POST(request: NextRequest) {
+  // TODO: Assert that user is authenticated
+
+  const identifier = "api-route";
+  const result = await ratelimit.limit(identifier);
+
+  if (!result.success) {
+    return NextResponse.json("No generations remaining.", {
+      status: 429,
+      headers: {
+        "X-RateLimit-Limit": result?.limit,
+        "X-RateLimit-Remaining": result?.remaining,
+      },
+    });
   }
 
-  const prompt = req.body.prompt;
+  const { prompt } = await request.json();
 
-  const response = await fetch("https://api.replicate.com/v1/predictions", {
-    method: "POST",
-    headers: {
-      Authorization: `Token ${process.env.REPLICATE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      // Pinned to a specific version of Stable Diffusion
-      // See https://replicate.com/stability-ai/sdxl
-      version:
-        "2b017d9b67edd2ee1401238df49d75da53c523f36e363881e057f5dc3ed3c5b2",
+  try {
+    const output = await replicate.run(
+      // This is the ID of the replicate model you are running
+      "doriandarko/sdxl-hiroshinagai:563a66acc0b39e5308e8372bed42504731b7fec3bc21f2fcbea413398690f3ec",
+      {
+        input: {
+          prompt: "In the style of HISGH. " + prompt,
+          // ... other model parameters
+        },
+      },
+    );
 
-      // This is the text prompt that will be submitted by a form on the frontend
-      input: { prompt: prompt, version: "v1.4", scale: 2 },
-    }),
-  });
-
-  if (response.status !== 201) {
-    const error = await response.json();
-    res.statusCode = 500;
-    res.end(JSON.stringify({ detail: error.detail }));
-    return;
+    return NextResponse.json(output, {
+      headers: {
+        "X-RateLimit-Limit": result?.limit,
+        "X-RateLimit-Remaining": result?.remaining,
+      },
+    });
+  } catch (error) {
+    // TODO: log error to service
+    console.log(error);
+    return NextResponse.json("An error occurred. Please try again later.", {
+      status: 500,
+    });
   }
-
-  const imageGen = await response.json();
-
-  res.status(200).json(imageGen ? imageGen : "Failed to generate an image.");
 }

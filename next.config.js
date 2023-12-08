@@ -5,6 +5,23 @@
 await import("./src/env.js");
 
 /** @type {import("next").NextConfig} */
-const config = {};
+const config = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "replicate.com",
+      },
+      {
+        protocol: "https",
+        hostname: "replicate.delivery",
+      },
+      {
+        protocol: "https",
+        hostname: "*.replicate.delivery",
+      },
+    ],
+  },
+};
 
 export default config;
